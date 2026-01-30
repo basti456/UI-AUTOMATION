@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UI Automation Testing - Visual Comparison Tool</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="background-gradient"></div>
+
+    <div class="container">
+      <header class="header">
+        <div class="logo">
+          <span class="logo-icon">🎯</span>
+          <h1>UI Automation Testing</h1>
+        </div>
+        <p class="subtitle">AI-Powered Visual Comparison Tool</p>
+      </header>
+
+      <main class="main-content">
+        <section class="test-section" id="testSection">
+          <div class="card">
+            <h2>🚀 Start Visual Test</h2>
+            <p class="description">
+              Enter a website URL to test across all device sizes and compare
+              with Figma designs using AI
+            </p>
+
+            <form id="testForm" class="test-form">
+              <div class="input-group">
+                <label for="websiteUrl">Website URL</label>
+                <input
+                  type="url"
+                  id="websiteUrl"
+                  name="websiteUrl"
+                  placeholder="https://example.com"
+                  required
+                  autocomplete="url"
+                />
+              </div>
+
+              <div class="input-group">
+                <label style="display: flex; align-items: center; cursor: pointer; user-select: none;">
+                  <input
+                    type="checkbox"
+                    id="enableInteractive"
+                    name="enableInteractive"
+                    style="margin-right: 0.75rem; width: 18px; height: 18px; cursor: pointer;"
+                  />
+                  <span style="font-weight: 600; color: var(--text-primary);">
+                    🤖 Enable Interactive Testing
+                  </span>
+                </label>
+                <p style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-secondary); margin-left: 30px;">
+                  When enabled, the system will automatically detect clickable elements and test different UI states
+                </p>
+              </div>
+
+              <button type="submit" class="btn btn-primary" id="startButton">
+                <span class="btn-text">Start Testing</span>
+                <span class="btn-icon">→</span>
+              </button>
+            </form>
+
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-icon">📱</span>
+                <div>
+                  <div class="info-label">9 Device Sizes</div>
+                  <div class="info-value">From 320px to 1920px</div>
+                </div>
+              </div>
+              <div class="info-item">
+                <span class="info-icon">🤖</span>
+                <div>
+                  <div class="info-label">AI-Powered Analysis</div>
+                  <div class="info-value">Qwen3 VL Vision Model</div>
+                </div>
+              </div>
+              <div class="info-item">
+                <span class="info-icon">📊</span>
+                <div>
+                  <div class="info-label">Comprehensive Checks</div>
+                  <div class="info-value">Layout, Typography, Colors</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="progress-section hidden" id="progressSection">
+          <div class="card">
+            <h2>⚡ Testing in Progress</h2>
+
+            <div class="progress-info">
+              <div class="progress-status" id="progressStatus">
+                Initializing...
+              </div>
+              <div class="progress-device" id="progressDevice"></div>
+            </div>
+
+            <div class="progress-bar-container">
+              <div class="progress-bar" id="progressBar">
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+              <div class="progress-percentage" id="progressPercentage">0%</div>
+            </div>
+
+            <div class="device-counter" id="deviceCounter">
+              <span>Tested: </span>
+              <span id="completedDevices">0</span>
+              <span> / </span>
+              <span id="totalDevices">9</span>
+              <span> devices</span>
+            </div>
+
+            <div class="progress-log" id="progressLog"></div>
+          </div>
+        </section>
+
+        <section class="results-section hidden" id="resultsSection">
+          <div class="card">
+            <div class="results-header">
+              <h2>✅ Test Completed!</h2>
+              <button class="btn btn-secondary" id="viewReportButton">
+                View Full Report
+              </button>
+            </div>
+
+            <div class="report-preview" id="reportPreview">
+              <!-- Report will be loaded here -->
+            </div>
+
+            <div class="action-buttons">
+              <button class="btn btn-primary" id="newTestButton">
+                <span class="btn-icon">+</span>
+                <span class="btn-text">New Test</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="error-section hidden" id="errorSection">
+          <div class="card error-card">
+            <div class="error-icon">⚠️</div>
+            <h2>Test Failed</h2>
+            <p class="error-message" id="errorMessage"></p>
+            <button class="btn btn-secondary" id="retryButton">
+              Try Again
+            </button>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>Powered by Playwright + Qwen3 VL + Ollama API</p>
+      </footer>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

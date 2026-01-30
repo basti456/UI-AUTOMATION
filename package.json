@@ -1,15 +1,21 @@
 {
   "name": "ui-automation",
   "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {},
+  "main": "server.ts",
+  "scripts": {
+    "start": "ts-node backend/server.ts",
+    "test": "ts-node backend/runAutomation.ts",
+    "dev": "ts-node backend/server.ts"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "UI Testing Automation Tool with AI-powered Visual Analysis",
   "devDependencies": {
     "@axe-core/playwright": "^4.11.0",
     "@playwright/test": "^1.58.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
     "@types/node": "^25.0.10",
     "axe-core": "^4.11.1",
     "pixelmatch": "^7.1.0",
@@ -19,7 +25,14 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@types/uuid": "^10.0.0",
+    "axios": "^1.6.5",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
-    "ssim.js": "^3.5.0"
+    "express": "^4.18.2",
+    "ollama": "^0.5.9",
+    "sharp": "^0.33.2",
+    "ssim.js": "^3.5.0",
+    "uuid": "^13.0.0"
   }
 }
