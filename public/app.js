@@ -59,6 +59,7 @@ async function handleTestSubmit(e) {
 
     try {
         const enableInteractive = document.getElementById('enableInteractive').checked;
+        const deviceType = document.querySelector('input[name="deviceType"]:checked').value;
         
         const response = await fetch(`${API_BASE}/api/start-test`, {
             method: 'POST',
@@ -67,7 +68,8 @@ async function handleTestSubmit(e) {
             },
             body: JSON.stringify({ 
                 url,
-                enableInteractive 
+                enableInteractive,
+                deviceType
             }),
         });
 

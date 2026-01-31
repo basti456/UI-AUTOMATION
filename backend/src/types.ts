@@ -11,6 +11,7 @@ export interface VisualIssue {
   howToReproduce: string;
   deviceName: string;
   element?: string;
+  annotatedScreenshot?: string;
 }
 
 export interface TestResult {

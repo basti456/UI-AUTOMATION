@@ -17,15 +17,35 @@ const REPORTS_DIR = process.env.REPORTS_DIR ? path.join(__dirname, '../../', pro
 // In-memory test progress tracking
 const testProgressMap = new Map<string, TestProgress>();
 
-export async function runVisualTest(url: string, testId: string, enableInteractive?: boolean): Promise<TestResult[]> {
+export async function runVisualTest(url: string, testId: string, enableInteractive?: boolean, deviceType: string = 'both'): Promise<TestResult[]> {
   console.log(`🚀 Starting visual test for: ${url}`);
   console.log(`📝 Test ID: ${testId}`);
+  console.log(`📱 Device Type: ${deviceType}`);
+
+  // Filter devices based on type
+  const targetDevices = deviceList.filter(device => {
+    if (deviceType === 'both') return true;
+    
+    // Strict definition of Desktop vs Mobile/Tablet
+    const width = device.config.viewport?.width || 1920;
+    const name = device.name.toLowerCase();
+    
+    // Desktop: Width >= 1024 AND not explicitly a mobile/tablet device
+    const isDesktop = width >= 1024 && !name.includes('iphone') && !name.includes('ipad');
+    
+    if (deviceType === 'desktop') return isDesktop;
+    if (deviceType === 'mobile') return !isDesktop;
+    
+    return true;
+  });
+
+  console.log(`🎯 Testing on ${targetDevices.length} devices`);
 
   // Initialize progress
   updateTestProgress(testId, {
     testId,
     status: 'running',
-    totalDevices: deviceList.length,
+    totalDevices: targetDevices.length,
     completedDevices: 0,
     progress: 0,
     message: 'Initializing browser...',
@@ -44,23 +64,23 @@ export async function runVisualTest(url: string, testId: string, enableInteracti
     updateTestProgress(testId, {
       testId,
       status: 'running',
-      totalDevices: deviceList.length,
+      totalDevices: targetDevices.length,
       completedDevices: 0,
       progress: 5,
       message: 'Browser launched, starting device tests...',
     });
 
     // Test each device
-    for (let i = 0; i < deviceList.length; i++) {
-      const device = deviceList[i];
+    for (let i = 0; i < targetDevices.length; i++) {
+      const device = targetDevices[i];
       
       updateTestProgress(testId, {
         testId,
         status: 'running',
         currentDevice: device.name,
-        totalDevices: deviceList.length,
+        totalDevices: targetDevices.length,
         completedDevices: i,
-        progress: 5 + ((i / deviceList.length) * 85), // 5-90% for device testing
+        progress: 5 + ((i / targetDevices.length) * 85), // 5-90% for device testing
         message: `Testing ${device.name}...`,
       });
 
@@ -71,9 +91,9 @@ export async function runVisualTest(url: string, testId: string, enableInteracti
         testId,
         status: 'running',
         currentDevice: device.name,
-        totalDevices: deviceList.length,
+        totalDevices: targetDevices.length,
         completedDevices: i + 1,
-        progress: 5 + (((i + 1) / deviceList.length) * 85),
+        progress: 5 + (((i + 1) / targetDevices.length) * 85),
         message: `Completed ${device.name} - Found ${result.issues.length} issues`,
       });
     }
@@ -81,8 +101,8 @@ export async function runVisualTest(url: string, testId: string, enableInteracti
     updateTestProgress(testId, {
       testId,
       status: 'completed',
-      totalDevices: deviceList.length,
-      completedDevices: deviceList.length,
+      totalDevices: targetDevices.length,
+      completedDevices: targetDevices.length,
       progress: 100,
       message: 'Test completed successfully!',
     });
@@ -96,7 +116,7 @@ export async function runVisualTest(url: string, testId: string, enableInteracti
     updateTestProgress(testId, {
       testId,
       status: 'failed',
-      totalDevices: deviceList.length,
+      totalDevices: targetDevices.length,
       completedDevices: results.length,
       progress: 0,
       message: `Test failed: ${error.message}`,
@@ -183,13 +203,26 @@ async function testDevice(
       issues = aiResponse.issues;
 
       // Annotate screenshot if issues found
+      // Annotate screenshot if issues found
       if (issues.length > 0) {
-        annotatedPath = path.join(REPORTS_DIR, testId, 'annotated', `${device.name}_annotated.png`);
+        // 1. Master annotation (All issues)
+        annotatedPath = path.join(REPORTS_DIR, testId, 'annotated', `${device.name}_annotated_all.png`);
         await annotateScreenshot({
           screenshotPath,
           issues,
           outputPath: annotatedPath,
         });
+
+        // 2. Individual annotations (One per issue)
+        for (let j = 0; j < issues.length; j++) {
+            const issuePath = path.join(REPORTS_DIR, testId, 'annotated', `${device.name}_issue_${j + 1}.png`);
+            await annotateScreenshot({
+                screenshotPath,
+                issues: [issues[j]], // Pass only the single issue to isolate highlighting
+                outputPath: issuePath
+            });
+            issues[j].annotatedScreenshot = issuePath; // Store path in the issue object
+        }
       }
     } else {
       console.warn(`⚠️ No Figma baseline for ${device.name}.`);

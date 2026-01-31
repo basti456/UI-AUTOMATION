@@ -9,12 +9,12 @@ interface AnnotationOptions {
   outputPath: string;
 }
 
-// Color mapping for severity levels
+// Color mapping for severity levels with enhanced visibility
 const SEVERITY_COLORS = {
-  critical: { r: 220, g: 38, b: 38, alpha: 0.5 },   // Red
-  high: { r: 234, g: 88, b: 12, alpha: 0.5 },       // Orange
-  medium: { r: 234, g: 179, b: 8, alpha: 0.5 },     // Yellow
-  low: { r: 59, g: 130, b: 246, alpha: 0.5 },       // Blue
+  critical: { r: 220, g: 38, b: 38, alpha: 0.3 },   // Red with lower opacity for better visibility
+  high: { r: 234, g: 88, b: 12, alpha: 0.3 },       // Orange
+  medium: { r: 234, g: 179, b: 8, alpha: 0.3 },     // Yellow
+  low: { r: 59, g: 130, b: 246, alpha: 0.3 },       // Blue
 };
 
 export async function annotateScreenshot(options: AnnotationOptions): Promise<string> {
@@ -82,73 +82,89 @@ function createSVGOverlay(issues: VisualIssue[], imageWidth: number, imageHeight
     const safeWidth = Math.min(width, imageWidth - safeX);
     const safeHeight = Math.min(height, imageHeight - safeY);
 
-    // Create bounding box rectangle
+    // 1. Create Solid Bounding Box (User requested 1px solid)
     annotations.push(`
       <rect
         x="${safeX}"
         y="${safeY}"
         width="${safeWidth}"
         height="${safeHeight}"
-        fill="rgba(${color.r}, ${color.g}, ${color.b}, ${color.alpha})"
+        fill="none"
         stroke="rgb(${color.r}, ${color.g}, ${color.b})"
-        stroke-width="3"
-        rx="4"
+        stroke-width="2" 
+        rx="2"
       />
     `);
-
-    // Add issue number badge
+    
+    // 2. Add Issue Number Badge
     const badgeX = safeX;
     const badgeY = safeY - 30 < 0 ? safeY + safeHeight + 5 : safeY - 30;
 
     annotations.push(`
-      <g>
+      <g filter="url(#shadow)">
         <rect
           x="${badgeX}"
           y="${badgeY}"
-          width="40"
-          height="25"
+          width="30"
+          height="24"
           fill="rgb(${color.r}, ${color.g}, ${color.b})"
+          stroke="white"
+          stroke-width="1"
           rx="4"
         />
         <text
-          x="${badgeX + 20}"
+          x="${badgeX + 15}"
           y="${badgeY + 17}"
           font-family="Arial, sans-serif"
-          font-size="14"
+          font-size="12"
           font-weight="bold"
           fill="white"
           text-anchor="middle"
         >#${index + 1}</text>
       </g>
     `);
-
-    // Add severity badge
-    const severityBadgeX = badgeX + 45;
-    annotations.push(`
-      <g>
-        <rect
-          x="${severityBadgeX}"
-          y="${badgeY}"
-          width="${issue.severity.length * 8 + 10}"
-          height="25"
-          fill="rgb(${color.r}, ${color.g}, ${color.b})"
-          rx="4"
-        />
-        <text
-          x="${severityBadgeX + 5}"
-          y="${badgeY + 17}"
-          font-family="Arial, sans-serif"
-          font-size="12"
-          font-weight="bold"
-          fill="white"
-        >${issue.severity.toUpperCase()}</text>
-      </g>
-    `);
+    
+    // 3. Add Element Label if available (next to number)
+    if (issue.element) {
+        const truncatedElement = issue.element.length > 20 ? issue.element.substring(0, 18) + '...' : issue.element;
+        const charWidth = 7;
+        const labelWidth = truncatedElement.length * charWidth + 15;
+        const labelX = badgeX + 34; // Spaced after badge
+        
+        annotations.push(`
+          <g filter="url(#shadow)">
+            <rect
+              x="${labelX}"
+              y="${badgeY}"
+              width="${labelWidth}"
+              height="24"
+              fill="white"
+              stroke="rgb(${color.r}, ${color.g}, ${color.b})"
+              stroke-width="1"
+              rx="4"
+            />
+            <text
+              x="${labelX + 8}"
+              y="${badgeY + 16}"
+              font-family="Arial, sans-serif"
+              font-size="11"
+              font-weight="bold"
+              fill="rgb(${color.r}, ${color.g}, ${color.b})"
+              text-anchor="start"
+            >${truncatedElement}</text>
+          </g>
+        `);
+    }
   });
 
-  // Create complete SVG
+  // Create complete SVG with dropshadow definition
   const svg = `
     <svg width="${imageWidth}" height="${imageHeight}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.5)"/>
+        </filter>
+      </defs>
       ${annotations.join('\n')}
     </svg>
   `;

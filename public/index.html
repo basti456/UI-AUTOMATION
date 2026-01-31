@@ -45,6 +45,24 @@
               </div>
 
               <div class="input-group">
+                <label>Device Type</label>
+                <div class="device-selector">
+                  <label class="radio-label">
+                    <input type="radio" name="deviceType" value="desktop" checked>
+                    <span class="radio-custom">Desktop</span>
+                  </label>
+                  <label class="radio-label">
+                    <input type="radio" name="deviceType" value="mobile">
+                    <span class="radio-custom">Mobile</span>
+                  </label>
+                  <label class="radio-label">
+                    <input type="radio" name="deviceType" value="both">
+                    <span class="radio-custom">Both</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="input-group">
                 <label style="display: flex; align-items: center; cursor: pointer; user-select: none;">
                   <input
                     type="checkbox"
@@ -162,6 +180,6 @@
       </footer>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
   </body>
 </html>

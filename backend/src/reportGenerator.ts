@@ -176,52 +176,78 @@ function generateDeviceContent(result: TestResult, testId: string): string {
     `;
   }
 
-  // Group issues by category
-  const issuesByCategory = result.issues.reduce((acc, issue) => {
-    if (!acc[issue.category]) {
-      acc[issue.category] = [];
-    }
-    acc[issue.category].push(issue);
-    return acc;
-  }, {} as Record<string, VisualIssue[]>);
-
-  const categorySections = Object.entries(issuesByCategory).map(([category, issues]) => {
-    const issuesList = issues.map((issue, idx) => `
-      <div class="issue-item severity-${issue.severity}">
-        <div class="issue-header">
-          <span class="issue-number">#${idx + 1}</span>
-          <span class="severity-badge ${issue.severity}">${issue.severity.toUpperCase()}</span>
-          ${issue.element ? `<span class="element-tag">${issue.element}</span>` : ''}
-        </div>
-        <div class="issue-description">${issue.description}</div>
-        <div class="issue-reproduce">
-          <strong>How to reproduce:</strong> ${issue.howToReproduce}
-        </div>
-      </div>
-    `).join('');
-
+  // Create horizontal table layout
+  const issueRows = result.issues.map((issue, idx) => {
+    const websiteImg = result.screenshotPath ? getRelativePath(result.screenshotPath) : '';
+    const figmaImg = result.figmaPath ? getRelativePath(result.figmaPath) : '';
+    // Use specific annotated screenshot if available, else fall back to master
+    const annotatedImg = issue.annotatedScreenshot 
+      ? getRelativePath(issue.annotatedScreenshot) 
+      : (result.annotatedPath ? getRelativePath(result.annotatedPath) : '');
+    
     return `
-      <div class="category-section">
-        <h4 class="category-title">${category}</h4>
-        <div class="issues-list">
-          ${issuesList}
-        </div>
-      </div>
+      <tr class="issue-row severity-${issue.severity}">
+        <td class="issue-number-cell">
+          <span class="issue-number-badge">#${idx + 1}</span>
+          <span class="severity-pill ${issue.severity}">${issue.severity.toUpperCase()}</span>
+        </td>
+        <td class="issue-description-cell">
+          <div class="issue-category">${issue.category}</div>
+          <div class="issue-text">${issue.description}</div>
+          ${issue.element ? `<div class="issue-element">Element: <code>${issue.element}</code></div>` : ''}
+        </td>
+        <td class="reproduce-cell">
+          <div class="reproduce-text">${issue.howToReproduce || 'Review screenshot manually'}</div>
+        </td>
+        <td class="screenshots-cell">
+          <div class="screenshot-thumbnails">
+            ${annotatedImg ? `
+              <div class="thumbnail-wrapper">
+                <div class="thumb-label">Issue Highlight</div>
+                <img src="/${annotatedImg}" alt="Highlighted" class="screenshot-thumb" onclick="openImageModal(this.src)">
+              </div>
+            ` : ''}
+            ${websiteImg ? `
+              <div class="thumbnail-wrapper">
+                <div class="thumb-label">Website</div>
+                <img src="/${websiteImg}" alt="Website" class="screenshot-thumb" onclick="openImageModal(this.src)">
+              </div>
+            ` : ''}
+            ${figmaImg ? `
+              <div class="thumbnail-wrapper">
+                <div class="thumb-label">Figma</div>
+                <img src="/${figmaImg}" alt="Figma" class="screenshot-thumb" onclick="openImageModal(this.src)">
+              </div>
+            ` : ''}
+          </div>
+        </td>
+      </tr>
     `;
   }).join('');
 
   return `
-    <div class="issues-section">
-      ${categorySections}
+    <div class="issues-table-container">
+      <table class="issues-table">
+        <thead>
+          <tr>
+            <th style="width: 100px">Issue #</th>
+            <th style="width: 35%">Description</th>
+            <th style="width: 30%">How to Reproduce</th>
+            <th style="width: 300px">Screenshots</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${issueRows}
+        </tbody>
+      </table>
     </div>
-    ${generateScreenshotComparison(result, testId)}
   `;
 }
 
 function generateScreenshotComparison(result: TestResult, testId: string): string {
-  const websiteImg = result.screenshotPath ? path.relative(process.cwd(), result.screenshotPath).replace(/\\/g, '/') : '';
-  const figmaImg = result.figmaPath ? path.relative(process.cwd(), result.figmaPath).replace(/\\/g, '/') : '';
-  const annotatedImg = result.annotatedPath ? path.relative(process.cwd(), result.annotatedPath).replace(/\\/g, '/') : '';
+  const websiteImg = result.screenshotPath ? getRelativePath(result.screenshotPath) : '';
+  const figmaImg = result.figmaPath ? getRelativePath(result.figmaPath) : '';
+  const annotatedImg = result.annotatedPath ? getRelativePath(result.annotatedPath) : '';
 
   return `
     <div class="screenshot-comparison">
@@ -233,18 +259,18 @@ function generateScreenshotComparison(result: TestResult, testId: string): strin
             <img src="/${annotatedImg}" alt="Annotated Screenshot" class="screenshot-img" onclick="openImageModal(this.src)">
           </div>
         ` : ''}
-                <div class="comparison-view">
-                    <div class="screenshot-container">
-                        <h4>Actual Website</h4>
-                        <img src="${getRelativePath(result.annotatedPath || result.screenshotPath)}" alt="Website Screenshot" onclick="openModal(this.src)">
-                    </div>
-                    ${result.figmaPath ? `
-                    <div class="screenshot-container">
-                        <h4>Figma Design</h4>
-                        <img src="${getRelativePath(result.figmaPath)}" alt="Figma Design" onclick="openModal(this.src)">
-                    </div>
-                    ` : ''}
-                </div>
+        ${websiteImg ? `
+          <div class="screenshot-item">
+            <div class="screenshot-label">Actual Website</div>
+            <img src="/${websiteImg}" alt="Website Screenshot" class="screenshot-img" onclick="openImageModal(this.src)">
+          </div>
+        ` : ''}
+        ${figmaImg ? `
+          <div class="screenshot-item">
+            <div class="screenshot-label">Figma Design</div>
+            <img src="/${figmaImg}" alt="Figma Design" class="screenshot-img" onclick="openImageModal(this.src)">
+          </div>
+        ` : ''}
       </div>
     </div>
   `;
@@ -526,156 +552,207 @@ function getReportStyles(): string {
         margin-bottom: 1rem;
       }
 
-      .category-section {
+      /* Table Layout Styles */
+      .issues-table-container {
+        overflow-x: auto;
         margin-bottom: 2rem;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
       }
 
-      .category-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: #2d3748;
-        margin-bottom: 1rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 2px solid #e2e8f0;
+      .issues-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 900px; /* Ensure table doesn't get too squeezed */
       }
 
-      .issues-list {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-      }
-
-      .issue-item {
-        background: #f7fafc;
-        border-radius: 8px;
+      .issues-table th {
+        background: #f8fafc;
         padding: 1rem;
-        border-left: 4px solid;
-        transition: transform 0.2s;
+        text-align: left;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #4a5568;
+        border-bottom: 2px solid #e2e8f0;
+        white-space: nowrap;
       }
 
-      .issue-item:hover {
-        transform: translateX(4px);
+      .issues-table td {
+        padding: 1.25rem 1rem;
+        vertical-align: top;
+        border-bottom: 1px solid #edf2f7;
       }
 
-      .issue-item.severity-critical {
-        border-left-color: #f56565;
+      .issue-row:last-child td {
+        border-bottom: none;
       }
 
-      .issue-item.severity-high {
-        border-left-color: #ed8936;
+      .issue-row:hover {
+        background-color: #fcfdfe;
       }
 
-      .issue-item.severity-medium {
-        border-left-color: #ecc94b;
+      /* Severity Colors for Rows */
+      .issue-row.severity-critical { border-left: 4px solid #f56565; }
+      .issue-row.severity-high { border-left: 4px solid #ed8936; }
+      .issue-row.severity-medium { border-left: 4px solid #ecc94b; }
+      .issue-row.severity-low { border-left: 4px solid #4299e1; }
+
+      .issue-number-badge {
+        display: inline-block;
+        background: #2d3748;
+        color: white;
+        border-radius: 6px;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
       }
 
-      .issue-item.severity-low {
-        border-left-color: #4299e1;
+      .severity-pill {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: white;
+        margin-top: 0.25rem;
+      }
+      .severity-pill.critical { background: #f56565; }
+      .severity-pill.high { background: #ed8936; }
+      .severity-pill.medium { background: #ecc94b; }
+      .severity-pill.low { background: #4299e1; }
+
+      .issue-category {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #718096;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
       }
 
-      .issue-header {
+      .issue-text {
+        color: #2d3748;
+        font-weight: 500;
+        line-height: 1.5;
+        font-size: 0.95rem;
+      }
+
+      .issue-element {
+        margin-top: 0.5rem;
+        font-size: 0.8rem;
+        color: #4a5568;
+      }
+
+      .issue-element code {
+        background: #edf2f7;
+        padding: 0.1rem 0.3rem;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+
+      .reproduce-text {
+        font-size: 0.85rem;
+        color: #4a5568;
+        line-height: 1.5;
+        background: #fff;
+        padding: 0.75rem;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+      }
+
+      .screenshot-thumbnails {
         display: flex;
-        align-items: center;
         gap: 0.75rem;
-        margin-bottom: 0.75rem;
         flex-wrap: wrap;
       }
 
-      .issue-number {
-        font-weight: 700;
-        color: #2d3748;
+      .thumbnail-wrapper {
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+        background: white;
+        transition: transform 0.2s, box-shadow 0.2s;
+        width: 120px;
       }
 
-      .severity-badge {
-        padding: 0.25rem 0.75rem;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: white;
+      .thumbnail-wrapper:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border-color: #cbd5e0;
       }
 
-      .severity-badge.critical {
-        background: #f56565;
-      }
-
-      .severity-badge.high {
-        background: #ed8936;
-      }
-
-      .severity-badge.medium {
-        background: #ecc94b;
-      }
-
-      .severity-badge.low {
-        background: #4299e1;
-      }
-
-      .element-tag {
-        padding: 0.25rem 0.75rem;
-        background: #e2e8f0;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: #2d3748;
-      }
-
-      .issue-description {
-        color: #2d3748;
-        margin-bottom: 0.5rem;
-        line-height: 1.6;
-      }
-
-      .issue-reproduce {
+      .thumb-label {
+        font-size: 0.65rem;
+        background: #f7fafc;
         color: #4a5568;
-        font-size: 0.875rem;
-        font-style: italic;
+        padding: 0.25rem;
+        text-align: center;
+        border-bottom: 1px solid #e2e8f0;
+        font-weight: 600;
       }
 
+      .screenshot-thumb {
+        width: 100%;
+        height: 80px;
+        object-fit: contain; /* Show full image scaled down */
+        display: block;
+        background: #f8fafc;
+        cursor: zoom-in;
+      }
+
+      /* Existing Screenshot Grid Styles (Kept for Summary Section) */
       .screenshot-comparison {
-        margin-top: 2rem;
+        margin-top: 3rem;
         padding-top: 2rem;
         border-top: 2px solid #e2e8f0;
       }
 
       .screenshot-comparison h4 {
-        font-size: 1.125rem;
-        font-weight: 600;
+        font-size: 1.25rem;
+        margin-bottom: 1.5rem;
         color: #2d3748;
-        margin-bottom: 1rem;
       }
 
       .screenshot-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 1.5rem;
+        gap: 2rem;
+        align-items: start;
       }
 
       .screenshot-item {
-        border-radius: 8px;
+        background: white;
+        border-radius: 12px;
         overflow: hidden;
-        background: #f7fafc;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e2e8f0;
       }
 
       .screenshot-label {
-        padding: 0.75rem;
+        padding: 1rem;
         background: #2d3748;
         color: white;
         font-weight: 600;
         text-align: center;
-        font-size: 0.875rem;
       }
 
       .screenshot-img {
         width: 100%;
         height: auto;
+        max-height: 500px;
+        object-fit: contain;
         display: block;
-        cursor: pointer;
-        transition: transform 0.2s;
+        cursor: zoom-in;
       }
 
-      .screenshot-img:hover {
-        transform: scale(1.02);
+      @media (max-width: 1024px) {
+        .issues-table th:nth-child(4),
+        .issues-table td:nth-child(4) {
+          display: none; /* Hide thumbnails on smaller screens if needed */
+        }
       }
 
       /* Modal for full-size images */

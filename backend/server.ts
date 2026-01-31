@@ -33,7 +33,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 
 // Start a new test
 app.post('/api/start-test', async (req: Request, res: Response) => {
-  const { url, enableInteractive } = req.body;
+  const { url, enableInteractive, deviceType } = req.body;
 
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
@@ -52,8 +52,8 @@ app.post('/api/start-test', async (req: Request, res: Response) => {
   // Store test info
   activeTests.set(testId, { url, status: 'queued' });
 
-  // Start test in background (pass enableInteractive option)
-  runTest(testId, url, enableInteractive);
+  // Start test in background (pass enableInteractive and deviceType option)
+  runTest(testId, url, enableInteractive, deviceType);
 
   res.json({
     testId,
@@ -114,15 +114,16 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 // Background test execution
-async function runTest(testId: string, url: string, enableInteractive?: boolean) {
+async function runTest(testId: string, url: string, enableInteractive?: boolean, deviceType?: string) {
   try {
     const separator = '='.repeat(60);
     console.log(`\n${separator}`);
     console.log(`🚀 Starting test ${testId} for ${url}`);
     console.log(`🤖 Interactive testing: ${enableInteractive ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`📱 Device Type: ${deviceType || 'ALL'}`);
     console.log(separator);
 
-    const results = await runVisualTest(url, testId, enableInteractive);
+    const results = await runVisualTest(url, testId, enableInteractive, deviceType);
 
     // Generate report
     const html = generateHTMLReport({

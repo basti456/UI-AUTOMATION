@@ -20,8 +20,8 @@ const ollamaClient = new Ollama({
 
 // Comprehensive visual check prompt based on requirements
 const VISUAL_CHECK_PROMPT = `You are analyzing TWO screenshots:
-1. **Figma Design Screenshot** - The intended design
-2. **Website Screenshot** - The actual implementation
+1. **Website Screenshot** - The actual implementation
+2. **Figma Design Screenshot** - The intended design
 
 **YOUR TASK:** Compare these screenshots and find ALL differences and issues.
 
@@ -132,11 +132,12 @@ For each issue found, provide:
 {
   "category": "One of: Layout Issues, Responsive Design, Typography, Visual Style Mismatch, Image Quality",
   "severity": "critical" | "high" | "medium" | "low",
-  "description": "Clear description of the difference or issue",
-  "location": "Where in the UI (e.g., 'Header navigation', 'Hero CTA button')",
-  "figmaExpected": "What Figma shows (if comparing design)",
-  "websiteActual": "What website screenshot shows",
-  "howToSpot": "How to visually identify this issue"
+  "description": "Clear description of the difference or issue. Be specific.",
+  "location": "Where in the UI (e.g., 'Header navigation Start Now button')",
+  "boundingBox": { "x": number, "y": number, "width": number, "height": number } // Approximate coordinates on the website screenshot
+  "howToReproduce": "Step-by-step instructions to spot this issue (e.g. 'Observe the blue button alignment relative to the text')",
+  "figmaExpected": "What Figma shows",
+  "websiteActual": "What website screenshot shows"
 }
 
 Return ONLY valid JSON:
@@ -245,11 +246,26 @@ export async function analyzeVisualDifferences(
       };
     }
 
-    // Add device name to each issue
-    parsedResponse.issues = parsedResponse.issues.map((issue) => ({
-      ...issue,
-      deviceName: deviceName,
-    }));
+    // Add device name and map fields to VisualIssue format
+    parsedResponse.issues = parsedResponse.issues.map((issue: any) => {
+      // Map AI response fields to our VisualIssue type
+      const mappedIssue: VisualIssue = {
+        category: issue.category || 'Unknown',
+        severity: issue.severity || 'medium',
+        description: issue.description || issue.websiteActual || 'No description',
+        deviceName: deviceName,
+        // Create howToReproduce from available AI fields
+        // Create howToReproduce from available AI fields with strict fallback
+        howToReproduce: (issue.howToReproduce && issue.howToReproduce !== 'undefined') 
+          ? issue.howToReproduce 
+          : (issue.howToSpot || 
+             (issue.location ? `Check ${issue.location}` : 
+             `Compare ${deviceName} screenshot with Figma manually`)),
+        element: issue.location || issue.element || undefined,
+        boundingBox: issue.boundingBox || undefined,
+      };
+      return mappedIssue;
+    });
 
     console.log(`📊 Found ${parsedResponse.issues.length} issues on ${deviceName}`);
 
