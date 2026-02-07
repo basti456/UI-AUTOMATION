@@ -179,9 +179,9 @@ export async function analyzeVisualDifferences(
 
     // Prepare the prompt with device context
     let promptPrefix = VISUAL_CHECK_PROMPT;
-    
+
     if (isStyleReferenceOnly) {
-       promptPrefix = `
+      promptPrefix = `
        IMPORTANT: You are comparing a **MOBILE WEBSITE** against a **DESKTOP DESIGN REFERENCE**.
        
        IGNORE ALL LAYOUT DIFFERENCES. The layout is expected to be different.
@@ -230,7 +230,7 @@ export async function analyzeVisualDifferences(
     } catch (parseError) {
       console.warn(`⚠️ Failed to parse AI response for ${deviceName}, creating manual structure`);
       console.log('AI Response:', aiContent);
-      
+
       // Fallback: create a manual issue if parsing fails
       parsedResponse = {
         issues: [
@@ -256,11 +256,11 @@ export async function analyzeVisualDifferences(
         deviceName: deviceName,
         // Create howToReproduce from available AI fields
         // Create howToReproduce from available AI fields with strict fallback
-        howToReproduce: (issue.howToReproduce && issue.howToReproduce !== 'undefined') 
-          ? issue.howToReproduce 
-          : (issue.howToSpot || 
-             (issue.location ? `Check ${issue.location}` : 
-             `Compare ${deviceName} screenshot with Figma manually`)),
+        howToReproduce: (issue.howToReproduce && issue.howToReproduce !== 'undefined')
+          ? issue.howToReproduce
+          : (issue.howToSpot ||
+            (issue.location ? `Check ${issue.location}` :
+              `Compare ${deviceName} screenshot with Figma manually`)),
         element: issue.location || issue.element || undefined,
         boundingBox: issue.boundingBox || undefined,
       };
@@ -308,7 +308,12 @@ export async function detectInteractiveElements(imagePath: string, domContext: s
 
   const prompt = `
     Analyze this UI screenshot and the simplified DOM list below.
-    Identify the top 3-5 most important interactive elements (buttons, menus, inputs) that should be tested to explore different states.
+    Identify the top 5-8 most important interactive elements that should be tested to explore different states.
+    
+    **PRIORITY ORDER:**
+    1. **INPUT FIELDS** (email, password, text, search, etc.) - These should have action:"type"
+    2. **BUTTONS** (submit, login, CTA, etc.) - These should have action:"click"
+    3. **NAVIGATION** (links, menu items)
     
     Simplified DOM Context:
     ${domContext}
@@ -317,18 +322,33 @@ export async function detectInteractiveElements(imagePath: string, domContext: s
     {
       "actions": [
         {
-          "name": "Click [Element Name]",
-          "selector": "CSS selector", 
-          "action": "click" | "type", 
-          "description": "Brief description of what this does" 
+          "name": "Fill email field",
+          "selector": "input[type='email']", 
+          "action": "type", 
+          "description": "Enter email address" 
+        },
+        {
+          "name": "Fill password field",
+          "selector": "input[type='password']", 
+          "action": "type", 
+          "description": "Enter password" 
+        },
+        {
+          "name": "Click login button",
+          "selector": "button[type='submit']", 
+          "action": "click", 
+          "description": "Submit login form" 
         }
       ]
     }
     
-    Rules:
-    1. Prefer ID selectors or specific classes found in the DOM list.
-    2. Focus on navigation, primary CTAs, and inputs.
-    3. Return ONLY valid JSON.
+    **CRITICAL RULES:**
+    1. For ALL input fields (email, password, text, search, etc.), use action: "type"
+    2. For buttons, use action: "click"
+    3. Prioritize form inputs FIRST, then buttons
+    4. Use specific CSS selectors from the DOM list (prefer IDs, then type attributes, then classes)
+    5. Name format: "Fill [field type] field" for inputs, "Click [button name]" for buttons
+    6. Return ONLY valid JSON, no markdown, no explanations
   `;
 
   try {
@@ -339,8 +359,8 @@ export async function detectInteractiveElements(imagePath: string, domContext: s
         content: prompt,
         images: [base64Image]
       }],
-      format: 'json', 
-      options: { temperature: 0.1 } 
+      format: 'json',
+      options: { temperature: 0.1 }
     });
 
     const result = JSON.parse(response.message.content);

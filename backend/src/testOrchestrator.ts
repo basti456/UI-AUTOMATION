@@ -4,7 +4,7 @@ import fs from 'fs';
 import { deviceList } from '../../tests/devices';
 import { analyzeVisualDifferences, validateImagePaths } from './qwenVisionService';
 import { annotateScreenshot } from './imageAnnotator';
-import { TestResult, TestProgress, VisualIssue } from './types';
+import { TestResult, TestProgress, VisualIssue, InteractionState } from './types';
 import { generateInteractionPlan, executeInteraction } from './interactionService';
 import dotenv from 'dotenv';
 
@@ -25,17 +25,17 @@ export async function runVisualTest(url: string, testId: string, enableInteracti
   // Filter devices based on type
   const targetDevices = deviceList.filter(device => {
     if (deviceType === 'both') return true;
-    
+
     // Strict definition of Desktop vs Mobile/Tablet
     const width = device.config.viewport?.width || 1920;
     const name = device.name.toLowerCase();
-    
+
     // Desktop: Width >= 1024 AND not explicitly a mobile/tablet device
     const isDesktop = width >= 1024 && !name.includes('iphone') && !name.includes('ipad');
-    
+
     if (deviceType === 'desktop') return isDesktop;
     if (deviceType === 'mobile') return !isDesktop;
-    
+
     return true;
   });
 
@@ -73,7 +73,7 @@ export async function runVisualTest(url: string, testId: string, enableInteracti
     // Test each device
     for (let i = 0; i < targetDevices.length; i++) {
       const device = targetDevices[i];
-      
+
       updateTestProgress(testId, {
         testId,
         status: 'running',
@@ -112,7 +112,7 @@ export async function runVisualTest(url: string, testId: string, enableInteracti
 
   } catch (error: any) {
     console.error(`❌ Test failed: ${error.message}`);
-    
+
     updateTestProgress(testId, {
       testId,
       status: 'failed',
@@ -180,16 +180,17 @@ async function testDevice(
       // Fallback: Use Desktop for Style Reference if no Mobile match
       const desktopFallback = findMatchingFigmaFile('Desktop_1920px', 1920);
       if (desktopFallback) {
-         console.log(`⚠️ PARTIAL MATCH: Using Desktop design as Style Reference for ${device.name}`);
-         figmaPath = desktopFallback;
-         isStyleReferenceOnly = true;
+        console.log(`⚠️ PARTIAL MATCH: Using Desktop design as Style Reference for ${device.name}`);
+        figmaPath = desktopFallback;
+        isStyleReferenceOnly = true;
       } else {
-         console.log(`⚠️ NO MATCH: No Figma baseline found for ${device.name}`);
+        console.log(`⚠️ NO MATCH: No Figma baseline found for ${device.name}`);
       }
     }
-    
+
     let issues: VisualIssue[] = [];
     let annotatedPath: string | undefined;
+    const interactionStates: InteractionState[] = [];
 
     if (figmaPath && fs.existsSync(figmaPath)) {
       // Analyze with AI
@@ -215,74 +216,90 @@ async function testDevice(
 
         // 2. Individual annotations (One per issue)
         for (let j = 0; j < issues.length; j++) {
-            const issuePath = path.join(REPORTS_DIR, testId, 'annotated', `${device.name}_issue_${j + 1}.png`);
-            await annotateScreenshot({
-                screenshotPath,
-                issues: [issues[j]], // Pass only the single issue to isolate highlighting
-                outputPath: issuePath
-            });
-            issues[j].annotatedScreenshot = issuePath; // Store path in the issue object
+          const issuePath = path.join(REPORTS_DIR, testId, 'annotated', `${device.name}_issue_${j + 1}.png`);
+          await annotateScreenshot({
+            screenshotPath,
+            issues: [issues[j]], // Pass only the single issue to isolate highlighting
+            outputPath: issuePath
+          });
+          issues[j].annotatedScreenshot = issuePath; // Store path in the issue object
         }
       }
     } else {
       console.warn(`⚠️ No Figma baseline for ${device.name}.`);
-      
-      // Check if interactive testing is enabled (parameter takes priority over env variable)
-      const isInteractiveEnabled = enableInteractive !== undefined 
-        ? enableInteractive 
-        : process.env.ENABLE_INTERACTIVE_TESTING === 'true';
-      
-      if (isInteractiveEnabled) {
-        console.log(`🤖 Starting Auto-Exploration Mode...`);
-        // Auto-Exploration Mode
-        try {
-          const interactionPlan = await generateInteractionPlan(page, screenshotPath);
-          
-          for (const action of interactionPlan) {
-            console.log(`🤖 Auto-Exploring: ${action.name}`);
-            
-            await executeInteraction(page, action);
-            
-            // Capture state screenshot
-            const stateName = `${device.name}_${action.action}_${action.name.replace(/\s+/g, '_')}`;
-            const stateScreenshotPath = path.join(SCREENSHOT_DIR, testId, `${stateName}.png`);
-            await page.screenshot({ path: stateScreenshotPath, fullPage: true });
+      issues.push({
+        category: 'Missing Baseline',
+        severity: 'low',
+        description: `No Figma design screenshot found for ${device.name}. Add a baseline to enable comparison.`,
+        howToReproduce: `Add ${device.name}.png or a generic mobile/desktop.png to ${FIGMA_DIR} folder`,
+        deviceName: device.name,
+      });
+    }
 
-            // Compare with Main Design (Consistency Check) -> Using Desktop as style reference
-            // Note: In a real scenario, we'd check if specific state Figma file exists
-            const styleReferencePath = findMatchingFigmaFile('Desktop_1920px', 1920); // Fallback to desktop for style
-            
-            if (styleReferencePath && fs.existsSync(styleReferencePath)) {
-               const aiResponse = await analyzeVisualDifferences({
-                  websiteImagePath: stateScreenshotPath,
-                  figmaImagePath: styleReferencePath,
-                  deviceName: stateName
-               });
-               
-               // Add state issues to main issues list
-               issues.push(...aiResponse.issues.map(i => ({...i, category: `[Interaction: ${action.name}] ${i.category}`})));
+    // Interactive Testing - Run AFTER Figma comparison (if enabled)
+    const isInteractiveEnabled = enableInteractive !== undefined
+      ? enableInteractive
+      : process.env.ENABLE_INTERACTIVE_TESTING === 'true';
+
+    if (isInteractiveEnabled) {
+      console.log(`🤖 Starting Auto-Exploration Mode...`);
+      try {
+        const interactionPlan = await generateInteractionPlan(page, screenshotPath);
+
+        for (const action of interactionPlan) {
+          console.log(`🤖 Auto-Exploring: ${action.name}`);
+
+          await executeInteraction(page, action);
+
+          // Capture state screenshot
+          const stateName = `${device.name}_${action.action}_${action.name.replace(/\s+/g, '_')}`;
+          const stateScreenshotPath = path.join(SCREENSHOT_DIR, testId, `${stateName}.png`);
+          await page.screenshot({ path: stateScreenshotPath, fullPage: true });
+
+          // Track this interaction state
+          interactionStates.push({
+            actionName: action.name,
+            screenshotPath: stateScreenshotPath,
+            timestamp: new Date().toISOString()
+          });
+
+          // Extra wait time to ensure interaction completes and page updates
+          await page.waitForTimeout(1500); // Increased from 500ms to 1500ms
+          await page.waitForLoadState('networkidle');
+
+          // Compare with Main Design (Consistency Check)
+          const styleReferencePath = figmaPath || findMatchingFigmaFile('Desktop_1920px', 1920);
+
+          if (styleReferencePath && fs.existsSync(styleReferencePath)) {
+            // Add delay to prevent rate limiting
+            await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+
+            const aiResponse = await analyzeVisualDifferences({
+              websiteImagePath: stateScreenshotPath,
+              figmaImagePath: styleReferencePath,
+              deviceName: stateName
+            });
+
+            // If issues found, create annotated screenshot for this specific interaction
+            if (aiResponse.issues.length > 0) {
+              const annotatedStatePath = path.join(REPORTS_DIR, testId, 'annotated', `${stateName}_annotated.png`);
+              await annotateScreenshot({
+                screenshotPath: stateScreenshotPath,
+                issues: aiResponse.issues,
+                outputPath: annotatedStatePath,
+              });
+
+              // Store annotated path in the last interaction state we just added
+              const lastIndex = interactionStates.length - 1;
+              interactionStates[lastIndex].annotatedPath = annotatedStatePath;
             }
-          }
-        } catch (interactionError) {
-          console.error(`Exploration failed: ${interactionError}`);
-        }
 
-        issues.push({
-          category: 'Info',
-          severity: 'low',
-          description: `No specific Figma baseline. Performed Auto-Exploration and Style Consistency checks.`,
-          howToReproduce: `Review auto-generated state screenshots`,
-          deviceName: device.name,
-        });
-      } else {
-        console.log(`ℹ️ Interactive testing disabled. Skipping auto-exploration.`);
-        issues.push({
-          category: 'Missing Baseline',
-          severity: 'low',
-          description: `No Figma design screenshot found for ${device.name}. Add a baseline to enable comparison.`,
-          howToReproduce: `Add ${device.name}.png or a generic mobile/desktop.png to ${FIGMA_DIR} folder`,
-          deviceName: device.name,
-        });
+            // Add state issues to main issues list
+            issues.push(...aiResponse.issues.map(i => ({ ...i, category: `[Interaction: ${action.name}] ${i.category}` })));
+          }
+        }
+      } catch (interactionError) {
+        console.error(`Exploration failed: ${interactionError}`);
       }
     }
 
@@ -294,6 +311,7 @@ async function testDevice(
       figmaPath: fs.existsSync(figmaPath) ? figmaPath : '',
       annotatedPath,
       issues,
+      interactionStates: interactionStates.length > 0 ? interactionStates : undefined,
       timestamp: new Date().toISOString(),
     };
 
@@ -373,7 +391,7 @@ function findMatchingFigmaFile(deviceName: string, width: number): string | null
   }
 
   const folderPath = path.join(FIGMA_DIR, typeFolder);
-  
+
   // 2. Check in specific folder (mobile/desktop)
   if (fs.existsSync(folderPath)) {
     try {
@@ -393,7 +411,7 @@ function findMatchingFigmaFile(deviceName: string, width: number): string | null
   try {
     if (fs.existsSync(FIGMA_DIR)) {
       const files = fs.readdirSync(FIGMA_DIR);
-      
+
       // Determine keyword based on width
       let keyword = 'desktop';
       if (width < 600) keyword = 'mobile';
@@ -402,16 +420,16 @@ function findMatchingFigmaFile(deviceName: string, width: number): string | null
       // Partial match for keyword in filename
       const partialMatch = files.find(f => f.toLowerCase().includes(keyword) && /\.(png|jpg|jpeg)$/i.test(f));
       if (partialMatch) return path.join(FIGMA_DIR, partialMatch);
-      
+
       // Fallback for tablet -> desktop
       if (keyword === 'tablet') {
-         const desktopMatch = files.find(f => f.toLowerCase().includes('desktop') && /\.(png|jpg|jpeg)$/i.test(f));
-         if (desktopMatch) return path.join(FIGMA_DIR, desktopMatch);
+        const desktopMatch = files.find(f => f.toLowerCase().includes('desktop') && /\.(png|jpg|jpeg)$/i.test(f));
+        if (desktopMatch) return path.join(FIGMA_DIR, desktopMatch);
       }
     }
   } catch (error) {
     console.warn(`Error searching Figma root directory: ${error}`);
   }
-  
+
   return null;
 }

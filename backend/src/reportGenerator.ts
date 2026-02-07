@@ -69,7 +69,7 @@ export function generateHTMLReport(options: GenerateReportOptions): string {
 
 function generateHeader(data: ReportData): string {
   const date = new Date(data.timestamp).toLocaleString();
-  
+
   return `
     <header class="report-header">
         <div class="header-content">
@@ -95,7 +95,7 @@ function generateHeader(data: ReportData): string {
 
 function generateSummarySection(data: ReportData): string {
   const passRate = data.results.filter(r => r.issues.length === 0).length / data.results.length * 100;
-  
+
   return `
     <section class="summary-section">
         <h2>📊 Executive Summary</h2>
@@ -139,7 +139,7 @@ function generateDeviceSections(data: ReportData): string {
   const sections = data.results.map((result, index) => {
     const hasIssues = result.issues.length > 0;
     const statusClass = hasIssues ? 'has-issues' : 'passed';
-    
+
     return `
       <section class="device-section ${statusClass}">
         <div class="device-header" onclick="toggleDevice('device-${index}')">
@@ -148,9 +148,9 @@ function generateDeviceSections(data: ReportData): string {
                 <h3>${result.deviceName.replace(/_/g, ' ')}</h3>
             </div>
             <div class="device-status">
-                ${hasIssues 
-                  ? `<span class="badge badge-issues">${result.issues.length} issues</span>` 
-                  : `<span class="badge badge-pass">✓ Passed</span>`}
+                ${hasIssues
+        ? `<span class="badge badge-issues">${result.issues.length} issues</span>`
+        : `<span class="badge badge-pass">✓ Passed</span>`}
                 <span class="toggle-icon">▼</span>
             </div>
         </div>
@@ -181,10 +181,10 @@ function generateDeviceContent(result: TestResult, testId: string): string {
     const websiteImg = result.screenshotPath ? getRelativePath(result.screenshotPath) : '';
     const figmaImg = result.figmaPath ? getRelativePath(result.figmaPath) : '';
     // Use specific annotated screenshot if available, else fall back to master
-    const annotatedImg = issue.annotatedScreenshot 
-      ? getRelativePath(issue.annotatedScreenshot) 
+    const annotatedImg = issue.annotatedScreenshot
+      ? getRelativePath(issue.annotatedScreenshot)
       : (result.annotatedPath ? getRelativePath(result.annotatedPath) : '');
-    
+
     return `
       <tr class="issue-row severity-${issue.severity}">
         <td class="issue-number-cell">
@@ -203,14 +203,8 @@ function generateDeviceContent(result: TestResult, testId: string): string {
           <div class="screenshot-thumbnails">
             ${annotatedImg ? `
               <div class="thumbnail-wrapper">
-                <div class="thumb-label">Issue Highlight</div>
-                <img src="/${annotatedImg}" alt="Highlighted" class="screenshot-thumb" onclick="openImageModal(this.src)">
-              </div>
-            ` : ''}
-            ${websiteImg ? `
-              <div class="thumbnail-wrapper">
                 <div class="thumb-label">Website</div>
-                <img src="/${websiteImg}" alt="Website" class="screenshot-thumb" onclick="openImageModal(this.src)">
+                <img src="/${annotatedImg}" alt="Highlighted" class="screenshot-thumb" onclick="openImageModal(this.src)">
               </div>
             ` : ''}
             ${figmaImg ? `
@@ -241,6 +235,7 @@ function generateDeviceContent(result: TestResult, testId: string): string {
         </tbody>
       </table>
     </div>
+    ${generateInteractionStatesSection(result, testId)}
   `;
 }
 
@@ -271,6 +266,40 @@ function generateScreenshotComparison(result: TestResult, testId: string): strin
             <img src="/${figmaImg}" alt="Figma Design" class="screenshot-img" onclick="openImageModal(this.src)">
           </div>
         ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function generateInteractionStatesSection(result: TestResult, testId: string): string {
+  if (!result.interactionStates || result.interactionStates.length === 0) {
+    return '';
+  }
+
+  const stateItems = result.interactionStates.map((state, idx) => {
+    // Use annotated screenshot if available, otherwise use raw screenshot
+    const displayImg = state.annotatedPath ? getRelativePath(state.annotatedPath) : getRelativePath(state.screenshotPath);
+    return `
+      <div class="interaction-state-item">
+        <div class="state-header">
+          <div class="state-badge">${idx + 1}</div>
+          <div class="state-title">${state.actionName}</div>
+        </div>
+        <div class="state-image-container">
+          <img src="/${displayImg}" alt="${state.actionName}" class="state-screenshot" onclick="openImageModal(this.src)">
+          <div class="image-overlay">
+            <span class="view-icon">🔍 Click to enlarge</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="interaction-states-section">
+      <h4>🎬 Interactive States</h4>
+      <div class="interaction-states-grid">
+        ${stateItems}
       </div>
     </div>
   `;
@@ -748,6 +777,126 @@ function getReportStyles(): string {
         cursor: zoom-in;
       }
 
+      /* Interaction States Styles - Premium Refinement */
+      .interaction-states-section {
+        margin-top: 4rem;
+        padding-top: 2rem;
+        border-top: 2px solid #edf2f7;
+      }
+
+      .interaction-states-section h4 {
+        font-size: 1.5rem;
+        margin-bottom: 2rem;
+        color: #1a202c;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .interaction-states-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 2rem;
+      }
+
+      .interaction-state-item {
+        background: white;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e2e8f0;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .interaction-state-item:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        border-color: #cbd5e0;
+      }
+
+      .state-header {
+        padding: 1.25rem;
+        background: #f8fafc;
+        border-bottom: 1px solid #edf2f7;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .state-badge {
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        color: white;
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 0.875rem;
+        flex-shrink: 0;
+        box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.3);
+      }
+
+      .state-title {
+        font-weight: 600;
+        color: #2d3748;
+        font-size: 1rem;
+        line-height: 1.4;
+      }
+
+      .state-image-container {
+        position: relative;
+        overflow: hidden;
+        background: #f1f5f9;
+        cursor: pointer;
+      }
+
+      .state-screenshot {
+        width: 100%;
+        height: 240px;
+        object-fit: cover;
+        object-position: top;
+        transition: transform 0.5s ease;
+      }
+
+      .interaction-state-item:hover .state-screenshot {
+        transform: scale(1.05);
+      }
+
+      .image-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      .interaction-state-item:hover .image-overlay {
+        opacity: 1;
+      }
+
+      .view-icon {
+        color: white;
+        font-weight: 600;
+        font-size: 0.875rem;
+        background: rgba(255, 255, 255, 0.2);
+        padding: 0.5rem 1rem;
+        border-radius: 9999px;
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+      }
+
+
       @media (max-width: 1024px) {
         .issues-table th:nth-child(4),
         .issues-table td:nth-child(4) {
@@ -870,9 +1019,9 @@ function getReportScripts(): string {
 export function saveReport(testId: string, html: string): string {
   const reportsDir = process.env.REPORTS_DIR || 'reports';
   const reportPath = path.join(reportsDir, testId, 'report.html');
-  
+
   fs.writeFileSync(reportPath, html, 'utf-8');
   console.log(`📄 Report saved: ${reportPath}`);
-  
+
   return reportPath;
 }

@@ -14,12 +14,20 @@ export interface VisualIssue {
   annotatedScreenshot?: string;
 }
 
+export interface InteractionState {
+  actionName: string;
+  screenshotPath: string;
+  annotatedPath?: string;
+  timestamp: string;
+}
+
 export interface TestResult {
   deviceName: string;
   screenshotPath: string;
   figmaPath: string;
   annotatedPath?: string;
   issues: VisualIssue[];
+  interactionStates?: InteractionState[];
   timestamp: string;
 }
 

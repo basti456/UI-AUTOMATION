@@ -44,7 +44,44 @@ export async function executeInteraction(page: Page, plan: InteractionPlan) {
     } else if (plan.action === 'hover') {
       await element.hover();
     } else if (plan.action === 'type') {
-      await element.fill('test input');
+      // Smart Input Filling Logic
+      const inputValue = await element.evaluate((el: Element) => {
+        const input = el as HTMLInputElement;
+        const type = (input.type || '').toLowerCase();
+        const name = (input.name || '').toLowerCase();
+        const placeholder = (input.placeholder || '').toLowerCase();
+        const id = (input.id || '').toLowerCase();
+
+        // Helper to check if any attribute contains a keyword
+        const matches = (keywords: string[]) => {
+          return keywords.some(k => name.includes(k) || placeholder.includes(k) || id.includes(k));
+        };
+
+        if (type === 'email' || matches(['email', 'mail'])) return 'test@example.com';
+        if (type === 'password' || matches(['password', 'pass'])) return 'TestPass123!';
+        if (type === 'tel' || type === 'number' || matches(['phone', 'mobile', 'cell', 'zip', 'postal'])) return '1234567890';
+        if (type === 'date' || matches(['date', 'dob', 'birth'])) return '2024-01-01';
+        if (type === 'url' || matches(['url', 'website', 'link'])) return 'https://example.com';
+        if (matches(['search', 'query'])) return 'test search';
+        if (matches(['name', 'first', 'last', 'user'])) return 'John Doe';
+        if (matches(['address', 'location', 'city'])) return '123 Test St';
+
+        return 'Test Input';
+      });
+
+      // Handle Checkboxes/Radios if 'type' action was wrongly assigned
+      const isCheckable = await element.evaluate((el: Element) => {
+        const input = el as HTMLInputElement;
+        return input.type === 'checkbox' || input.type === 'radio';
+      });
+
+      if (isCheckable) {
+        console.log(`  ↳ Clicking checkbox/radio`);
+        await element.click(); // Just click it to toggle/select
+      } else {
+        console.log(`  ↳ Filling input with: "${inputValue}"`);
+        await element.fill(inputValue);
+      }
     }
 
     // Wait for any animations/transitions
