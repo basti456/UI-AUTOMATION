@@ -2,13 +2,25 @@ import fs from 'fs';
 import path from 'path';
 import { ReportData, TestResult, VisualIssue } from './types';
 
-const REPORTS_DIR = path.join(process.cwd(), 'public', 'reports');
+const REPORTS_DIR = path.join(process.cwd(), 'reports');
 
 function getRelativePath(fullPath: string): string {
   if (!fullPath) return '';
-  // relative to public folder since server serves static files from there
-  const relative = path.relative(path.join(process.cwd(), 'public'), fullPath);
-  return relative.replace(/\\/g, '/');
+  // Build a URL path relative to the server root that Express can serve
+  const cwd = process.cwd();
+  if (fullPath.includes('reports')) {
+    const rel = path.relative(path.join(cwd, 'reports'), fullPath);
+    return 'reports/' + rel.replace(/\\/g, '/');
+  }
+  if (fullPath.includes('screenshots')) {
+    const rel = path.relative(path.join(cwd, 'screenshots'), fullPath);
+    return 'screenshots/' + rel.replace(/\\/g, '/');
+  }
+  if (fullPath.includes('FigmaScreens')) {
+    const rel = path.relative(path.join(cwd, 'FigmaScreens'), fullPath);
+    return 'FigmaScreens/' + rel.replace(/\\/g, '/');
+  }
+  return fullPath.replace(/\\/g, '/');
 }
 
 interface GenerateReportOptions {
@@ -1016,12 +1028,19 @@ function getReportScripts(): string {
   `;
 }
 
-export function saveReport(testId: string, html: string): string {
+export function saveReport(testId: string, html: string, url?: string): string {
   const reportsDir = process.env.REPORTS_DIR || 'reports';
-  const reportPath = path.join(reportsDir, testId, 'report.html');
+  const reportDir = path.join(reportsDir, testId);
+  if (!fs.existsSync(reportDir)) fs.mkdirSync(reportDir, { recursive: true });
+  const reportPath = path.join(reportDir, 'report.html');
 
   fs.writeFileSync(reportPath, html, 'utf-8');
-  console.log(`📄 Report saved: ${reportPath}`);
 
+  // Save metadata for the /api/reports listing endpoint
+  const metaPath = path.join(reportDir, 'meta.json');
+  const meta = { testId, url: url || '', timestamp: new Date().toISOString() };
+  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
+
+  console.log(`📄 Report saved: ${reportPath}`);
   return reportPath;
 }

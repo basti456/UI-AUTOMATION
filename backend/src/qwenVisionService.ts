@@ -18,6 +18,34 @@ const ollamaClient = new Ollama({
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BASE64 IMAGE CACHE
+// Images (especially the Figma reference) are read & encoded once per path.
+// Without this, a 9-device run with 5 interactions each would re-encode the
+// same Figma file up to 54 times — wasting disk I/O and API token budget.
+// Call clearImageCache() at the start of each new test run.
+// ─────────────────────────────────────────────────────────────────────────────
+const _imageBase64Cache = new Map<string, string>();
+
+/** Returns the base64-encoded content of an image file, using cache if available. */
+function readImageBase64(filePath: string): string {
+  const cached = _imageBase64Cache.get(filePath);
+  if (cached) {
+    console.log(`📦 Cache hit for image: ${path.basename(filePath)} (saved re-encode)`);
+    return cached;
+  }
+  const base64 = fs.readFileSync(filePath).toString('base64');
+  _imageBase64Cache.set(filePath, base64);
+  return base64;
+}
+
+/** Clear the image cache between test runs to avoid stale references. */
+export function clearImageCache(): void {
+  const count = _imageBase64Cache.size;
+  _imageBase64Cache.clear();
+  if (count > 0) console.log(`🗑️  Cleared base64 image cache (${count} entries)`);
+}
+
 // Comprehensive visual check prompt based on requirements
 const VISUAL_CHECK_PROMPT = `You are analyzing TWO screenshots:
 1. **Website Screenshot** - The actual implementation
@@ -170,30 +198,24 @@ export async function analyzeVisualDifferences(
   try {
     console.log(`🤖 Analyzing ${deviceName} with Qwen3 VL...`);
 
-    // Read and encode images
-    const websiteImage = fs.readFileSync(websiteImagePath);
-    const figmaImage = fs.readFileSync(figmaImagePath);
-
-    const websiteBase64 = websiteImage.toString('base64');
-    const figmaBase64 = figmaImage.toString('base64');
+    // Use cache: the Figma reference is the same file across many device calls.
+    // The website screenshot is unique per device, but caching it still avoids
+    // a re-encode if the same screenshot is used in interactive-state analysis.
+    const websiteBase64 = readImageBase64(websiteImagePath);
+    const figmaBase64   = readImageBase64(figmaImagePath);
 
     // Prepare the prompt with device context
     let promptPrefix = VISUAL_CHECK_PROMPT;
 
     if (isStyleReferenceOnly) {
-      promptPrefix = `
-       IMPORTANT: You are comparing a **MOBILE WEBSITE** against a **DESKTOP DESIGN REFERENCE**.
-       
-       IGNORE ALL LAYOUT DIFFERENCES. The layout is expected to be different.
-       
-       FOCUS ONLY ON VISUAL STYLE CONSISTENCY:
-       1. **Colors**: Do button colors, background colors, and text colors match the desktop branding?
-       2. **Typography**: Are the font families and font weights consistent with the desktop design?
-       3. **Border/Shadows**: Do UI elements share the same border radius and shadow styles?
-       
-       Report ONLY style mismatches (e.g. "Mobile button is blue but Desktop design uses red").
-       IGNORE alignment, size, wrapping, and positioning.
-       `;
+      // Shorter prompt for style-only comparisons saves ~40% tokens vs full VISUAL_CHECK_PROMPT.
+      promptPrefix = `You are comparing a MOBILE website screenshot against a DESKTOP design reference.
+IGNORE all layout/sizing differences — focus ONLY on brand consistency:
+1. Colors — buttons, backgrounds, text
+2. Typography — font family, weight
+3. Borders/Shadows — border-radius, shadow style
+Report ONLY style mismatches. Return ONLY valid JSON:
+{"issues":[{"category":"Visual Style Mismatch","severity":"high|medium|low","description":"...","location":"...","boundingBox":{"x":0,"y":0,"width":0,"height":0},"howToReproduce":"...","figmaExpected":"...","websiteActual":"..."}],"summary":"...","figmaMatchScore":0}`;
     }
 
     const deviceSpecificPrompt = `${promptPrefix}\n\nDevice: ${deviceName}\nActual Website Screenshot: First image\nFigma Design Reference: Second image\n\nAnalyze the differences:`;
@@ -302,9 +324,150 @@ export function validateImagePaths(websitePath: string, figmaPath: string): bool
   return true;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NO-FIGMA MODE: Analyze against universal web / mobile design guidelines
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NO_FIGMA_PROMPT = `You are a senior UX/UI auditor. Analyze this website screenshot against universal web and mobile design best practices.
+
+## DESIGN STANDARDS TO EVALUATE
+
+### 1) WCAG 2.1 ACCESSIBILITY
+- Color contrast ratio: text must meet 4.5:1 (normal) or 3:1 (large text) minimum
+- Focus indicators visible for interactive elements
+- Text resizable without loss of content
+- Touch targets >= 44x44 CSS pixels (for mobile)
+- Font size not below 16px for body text on mobile
+
+### 2) RESPONSIVE DESIGN
+- No horizontal scrollbar on the visible viewport
+- Content not cut off or overflowing
+- Flexible images / videos (not fixed pixel widths)
+- Readable line lengths (45–85 characters per line)
+- Appropriate use of whitespace
+
+### 3) TYPOGRAPHY BEST PRACTICES
+- Font size hierarchy clear (headings > subheadings > body)
+- Line height 1.4–1.7 for body text
+- No more than 2–3 typefaces
+- Sufficient contrast between text and background
+- No orphans/widows or awkward text wrapping
+
+### 4) LAYOUT & VISUAL HIERARCHY
+- Clear focal point / CTA above the fold
+- Consistent spacing rhythm
+- Grid alignment maintained
+- cards/components properly aligned
+- Logical reading order (F-pattern or Z-pattern)
+
+### 5) INTERACTION & UX PATTERNS (Nielsen's Heuristics)
+- Navigation is visible and intuitive
+- Primary actions are prominent (not hidden)
+- Error states / empty states handled
+- Loading indicators where needed
+- No clutter — cognitive load minimized
+
+### 6) VISUAL DESIGN QUALITY
+- Consistent color palette
+- Shadow and elevation hierarchy consistent
+- Border radius pattern consistent
+- Image quality and aspect ratios correct
+- Professional look and feel
+
+## OUTPUT FORMAT
+For each issue found, return:
+{
+  "category": "Accessibility | Responsive Design | Typography | Layout | UX Pattern | Visual Design",
+  "severity": "critical" | "high" | "medium" | "low",
+  "description": "Specific issue description",
+  "location": "Where in the UI",
+  "boundingBox": { "x": number, "y": number, "width": number, "height": number },
+  "howToReproduce": "How to spot this issue",
+  "figmaExpected": "What best practice recommends",
+  "websiteActual": "What is observed"
+}
+
+Return ONLY valid JSON:
+{ "issues": [...], "summary": "Overall UX quality assessment", "figmaMatchScore": 0 }
+
+If NO issues: { "issues": [], "summary": "Excellent design quality", "figmaMatchScore": 0 }
+
+IMPORTANT: Be thorough but practical. Focus on real, noticeable issues that affect user experience.
+Return ONLY valid JSON, no markdown, no extra text.`;
+
+/**
+ * Analyze a screenshot against universal design guidelines (no Figma required).
+ */
+export async function analyzeWithoutFigma(
+  websiteImagePath: string,
+  deviceName: string
+): Promise<AIResponse> {
+  try {
+    console.log(`🌐 Analyzing ${deviceName} against universal design guidelines…`);
+
+    // Use cache — in no-Figma mode the website screenshot is unique per device
+    // but caching avoids a re-encode if the same path appears in interactive passes.
+    const websiteBase64 = readImageBase64(websiteImagePath);
+
+    const prompt = `${NO_FIGMA_PROMPT}\n\nDevice: ${deviceName}\nAnalyze this screenshot for design issues:`;
+
+    const response = await ollamaClient.chat({
+      model: MODEL,
+      messages: [{ role: 'user', content: prompt, images: [websiteBase64] }],
+      options: { temperature: 0.1 },
+    });
+
+    console.log(`✅ Universal analysis complete for ${deviceName}`);
+    const aiContent = response.message.content;
+    let parsedResponse: AIResponse;
+
+    try {
+      const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
+      parsedResponse = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(aiContent);
+    } catch {
+      parsedResponse = {
+        issues: [{
+          category: 'AI Analysis Error',
+          severity: 'medium',
+          description: `Response format unexpected: ${aiContent.substring(0, 200)}`,
+          howToReproduce: `Review ${deviceName} manually`,
+          deviceName,
+        }],
+        summary: 'AI response parsing error',
+      };
+    }
+
+    parsedResponse.issues = parsedResponse.issues.map((issue: any): VisualIssue => ({
+      category: issue.category || 'Design Issue',
+      severity: issue.severity || 'medium',
+      description: issue.description || 'No description',
+      deviceName,
+      howToReproduce: issue.howToReproduce || issue.location ? `Check ${issue.location}` : `Review ${deviceName} screenshot`,
+      element: issue.location || undefined,
+      boundingBox: issue.boundingBox || undefined,
+    }));
+
+    console.log(`📊 Found ${parsedResponse.issues.length} design issues on ${deviceName} (no-Figma mode)`);
+    return parsedResponse;
+  } catch (error: any) {
+    console.error(`❌ Error in no-Figma analysis for ${deviceName}:`, error.message);
+    return {
+      issues: [{
+        category: 'AI Service Error',
+        severity: 'medium',
+        description: `Failed to analyze: ${error.message}`,
+        howToReproduce: 'Check Ollama API configuration',
+        deviceName,
+      }],
+      summary: `Error during analysis: ${error.message}`,
+    };
+  }
+}
+
 export async function detectInteractiveElements(imagePath: string, domContext: string): Promise<any[]> {
-  const imageBuffer = fs.readFileSync(imagePath);
-  const base64Image = imageBuffer.toString('base64');
+  // Cache the screenshot — detectInteractiveElements may be called multiple
+  // times on the same initial screenshot if interactive testing iterates.
+  const base64Image = readImageBase64(imagePath);
 
   const prompt = `
     Analyze this UI screenshot and the simplified DOM list below.

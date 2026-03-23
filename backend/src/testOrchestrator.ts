@@ -2,7 +2,7 @@ import { chromium, BrowserContext, Browser } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 import { deviceList } from '../../tests/devices';
-import { analyzeVisualDifferences, validateImagePaths } from './qwenVisionService';
+import { analyzeVisualDifferences, validateImagePaths, analyzeWithoutFigma, clearImageCache } from './qwenVisionService';
 import { annotateScreenshot } from './imageAnnotator';
 import { TestResult, TestProgress, VisualIssue, InteractionState } from './types';
 import { generateInteractionPlan, executeInteraction } from './interactionService';
@@ -21,6 +21,10 @@ export async function runVisualTest(url: string, testId: string, enableInteracti
   console.log(`🚀 Starting visual test for: ${url}`);
   console.log(`📝 Test ID: ${testId}`);
   console.log(`📱 Device Type: ${deviceType}`);
+
+  // Clear the base64 image cache so this run starts fresh — prevents
+  // stale Figma / screenshot data from a previous test bleeding in.
+  clearImageCache();
 
   // Filter devices based on type
   const targetDevices = deviceList.filter(device => {
@@ -226,14 +230,22 @@ async function testDevice(
         }
       }
     } else {
-      console.warn(`⚠️ No Figma baseline for ${device.name}.`);
-      issues.push({
-        category: 'Missing Baseline',
-        severity: 'low',
-        description: `No Figma design screenshot found for ${device.name}. Add a baseline to enable comparison.`,
-        howToReproduce: `Add ${device.name}.png or a generic mobile/desktop.png to ${FIGMA_DIR} folder`,
-        deviceName: device.name,
-      });
+      // No Figma baseline — analyze against universal design guidelines instead
+      console.log(`🌐 No Figma baseline for ${device.name}. Using universal design guidelines mode.`);
+      const aiResponse = await analyzeWithoutFigma(screenshotPath, device.name);
+      issues = aiResponse.issues;
+
+      // Annotate screenshot if issues found
+      if (issues.length > 0) {
+        annotatedPath = path.join(REPORTS_DIR, testId, 'annotated', `${device.name}_annotated_all.png`);
+        await annotateScreenshot({ screenshotPath, issues, outputPath: annotatedPath });
+
+        for (let j = 0; j < issues.length; j++) {
+          const issuePath = path.join(REPORTS_DIR, testId, 'annotated', `${device.name}_issue_${j + 1}.png`);
+          await annotateScreenshot({ screenshotPath, issues: [issues[j]], outputPath: issuePath });
+          issues[j].annotatedScreenshot = issuePath;
+        }
+      }
     }
 
     // Interactive Testing - Run AFTER Figma comparison (if enabled)
@@ -243,11 +255,30 @@ async function testDevice(
 
     if (isInteractiveEnabled) {
       console.log(`🤖 Starting Auto-Exploration Mode...`);
+      updateTestProgress(testId, {
+        testId,
+        status: 'running',
+        totalDevices: 0,
+        completedDevices: 0,
+        progress: 92,
+        message: `🤖 [${device.name}] Detecting interactive elements…`,
+      });
       try {
         const interactionPlan = await generateInteractionPlan(page, screenshotPath);
 
-        for (const action of interactionPlan) {
-          console.log(`🤖 Auto-Exploring: ${action.name}`);
+        for (let iIdx = 0; iIdx < interactionPlan.length; iIdx++) {
+          const action = interactionPlan[iIdx];
+          console.log(`🤖 Auto-Exploring: ${action.name} (${iIdx + 1}/${interactionPlan.length})`);
+
+          // Push live status so the frontend progress bar reflects each interaction step
+          updateTestProgress(testId, {
+            testId,
+            status: 'running',
+            totalDevices: 0,
+            completedDevices: 0,
+            progress: 92 + Math.round((iIdx / interactionPlan.length) * 6), // 92–98%
+            message: `🤖 [${device.name}] Interacting: ${action.name} (${iIdx + 1}/${interactionPlan.length})`,
+          });
 
           await executeInteraction(page, action);
 
